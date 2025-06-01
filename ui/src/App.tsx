@@ -1,74 +1,158 @@
 import React, {useState, useRef, useEffect} from 'react';
 import './App.css';
-
-interface EntityDisplay {
-    xPosition: number,
-    yPosition: number,
-    color: string,
-}
-
-interface EntityMetaData {
-    name: string
-}
-
-interface Entity {
-    entityDisplay: EntityDisplay,
-    entityMetadata: EntityMetaData
-}
-
-
+import {EntityDetail, EntityDisplay, EntityMetaData} from "./components/entity/types";
+import Entity from "./components/entity/Entity";
+import entity from "./components/entity/Entity";
+import {ENTITY_TEXT_ELEMENT_ID} from "./components/entity/constants";
+import Relationship from "./components/Relationship";
 
 function App() {
+  const [entities, setEntities] = useState<EntityDetail[]>([])
+  const [selectedEntityId, setSelectedEntityId] = useState<number|null>(null)
   const [isHold,  setIsHold] = useState(false)
-  const [componentId, setComponentId] = useState(0)
+  const [xRel, setXRel] = useState(0);
+  const [yRel, setYRel] = useState(0);
+  const parentRef = useRef<HTMLDivElement>(null);
 
-  const [entities, setEntities] = useState<Entity[]>([])
-  const [isEditable, setEditable] = useState(false);
-  const pref = useRef<HTMLParagraphElement>(null);
+  const handleMouseDown = (event: React.MouseEvent<HTMLDivElement>, clickedEntity: EntityDetail) => {
+    const entitiesCopy = [...entities]
 
-  const handleMouseMove = (event: any) => {
+    // mark old selected entity unselected and uneditable
+    const selectedEntityIndex = entitiesCopy.findIndex((entity => entity.entityMetadata.id === selectedEntityId));
+    if(selectedEntityId !== null){
+        if(clickedEntity.entityMetadata.id !== selectedEntityId){
+            entitiesCopy[selectedEntityIndex].entityState.isSelected = false
+        }
+        entitiesCopy[selectedEntityIndex].entityState.isEditable = false
+    }
+
+    // move new selected entity to the top
+    const newSelectedEntityIndex = entitiesCopy.findIndex(entity => entity.entityMetadata.id == clickedEntity.entityMetadata.id )
+    const [newSelectedEntity] = entitiesCopy.splice(newSelectedEntityIndex, 1)
+    newSelectedEntity.entityState.isSelected = true
+    entitiesCopy.push(newSelectedEntity)
+    setEntities(entitiesCopy)
+    setSelectedEntityId(clickedEntity.entityMetadata.id)
+
+    setXRel(event.clientX - clickedEntity.entityDisplay.xPosition);
+    setYRel(event.clientY - clickedEntity.entityDisplay.yPosition);
+
+    setIsHold(true)
+  }
+
+  const handleMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
     if(isHold){
       const entitiesCopy = [...entities];
-      entitiesCopy[componentId].entityDisplay = {...entitiesCopy[componentId].entityDisplay, xPosition: event.clientX, yPosition: event.clientY}
+      const selectedEntityIndex = entitiesCopy.findIndex(entity => entity.entityMetadata.id === selectedEntityId)
+      entitiesCopy[selectedEntityIndex].entityDisplay.xPosition = event.clientX - xRel
+      entitiesCopy[selectedEntityIndex].entityDisplay.yPosition = event.clientY - yRel
       setEntities(entitiesCopy)
     }
   }
 
-  const handleMouseDown = (event: any, id: number) => {
-    setComponentId(id)
-    setIsHold(true)
-  }
-
-  const handleMouseUp = (event: any) => {
+  const handleMouseUp = (event: React.MouseEvent<HTMLDivElement>) => {
     setIsHold(false)
   }
 
+  const onMouseDownAnywhere = (event: React.MouseEvent<HTMLDivElement>) => {
+      if(parentRef.current && parentRef.current.children.length > 0){
+          let clickedEntityCount = 0
+          for(let i=0;i<parentRef.current.children.length;i++){
+              if(parentRef.current.children[i].contains(event.target as Node)){
+                  clickedEntityCount ++;
+              }
+          }
+
+          if(clickedEntityCount === 0 && selectedEntityId !== null){
+              const entitiesCopy = [...entities];
+              const selectedEntityIndex = entitiesCopy.findIndex(entity => entity.entityMetadata.id === selectedEntityId)
+              entitiesCopy[selectedEntityIndex].entityState.isSelected = false
+              entitiesCopy[selectedEntityIndex].entityState.isEditable = false
+              setEntities(entitiesCopy)
+              setSelectedEntityId(null);
+          }
+      }
+  }
+
+
+
+  const handleDoubleClick = (event: React.MouseEvent<HTMLDivElement>, doubleClickedEntity: EntityDetail) => {
+    const entitiesCopy = [...entities]
+    const doubleClickedEntityIndex = entitiesCopy.findIndex(entity => entity.entityMetadata.id === doubleClickedEntity.entityMetadata.id)
+    entitiesCopy[doubleClickedEntityIndex].entityState.isEditable = true
+    setEntities(entitiesCopy)
+  }
+
+
+
   const addEntity = () => {
-    const entity: Entity = {
+    const entityId = entities.length
+    const newEntityDetail: EntityDetail = {
         entityDisplay: {
-            xPosition: 25,
-            yPosition: 25,
-            color: "#000000"
+            xPosition: 0,
+            yPosition: 0,
+            borderColor: "#000000",
+            backgroundColor: "#ffffff",
+            textColor: "#000000"
         },
         entityMetadata: {
+            id: entityId,
             name: "New Entity"
+        },
+        entityState: {
+            isSelected: true,
+            isEditable: false,
         }
     }
-    setEntities([...entities, entity])
+    setEntities([...entities, newEntityDetail])
+    setSelectedEntityId(entityId)
   }
 
   useEffect(() => {
-      if(pref.current) {
-          pref.current.focus();
+    const editableEntityIndex = entities.findIndex(entity => entity.entityState.isEditable)
+    if(editableEntityIndex !== -1 && parentRef.current && parentRef.current.children.length > 0){
+      const editableSpanElement = parentRef.current.querySelector(`#${ENTITY_TEXT_ELEMENT_ID}_${editableEntityIndex}`)
+      if(document.activeElement !== editableSpanElement){
+          (editableSpanElement as any).focus()
+          const range = document.createRange()
+          range.selectNodeContents(editableSpanElement as Node)
+
+          const selection = window.getSelection()
+          selection?.removeAllRanges()
+          selection?.addRange(range)
+
+      }  else {
+           (editableSpanElement as any).focus()
+          const range = document.createRange()
+          range.selectNodeContents(editableSpanElement as Node)
+          range.collapse(false)
+
+          const selection = window.getSelection()
+          selection?.removeAllRanges()
+          selection?.addRange(range)
       }
-  }, [isEditable])
+    }
+  },
+  [entities])
+
+
+  const handleEditName = (event: any, editedEntity: EntityDetail)=> {
+    const entitiesCopy = [...entities]
+    const editedEntityIndex = entitiesCopy.findIndex(entity => entity.entityMetadata.id === editedEntity.entityMetadata.id)
+    entitiesCopy[editedEntityIndex].entityMetadata.name = event.target.innerText
+    setEntities(entitiesCopy)
+  }
+
+
 
   return (
-    <div className="App">
+    <div className="App"
+      onMouseDown={onMouseDownAnywhere}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+    >
       <div
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        // onClick={() => {setEditable(false)}}
+        ref={parentRef}
         style={{
           width: "100vw",
           height: "100vh",
@@ -79,39 +163,12 @@ function App() {
           position: "relative"
         }}
       >
+          <Relationship/>
           {
-              entities.map((entity, i) =>
-                  <div
-                      onMouseDown={(e) => handleMouseDown(e, i)}
-                      style={{
-                        borderStyle: "solid",
-                        position: "absolute",
-                        top: `${entity.entityDisplay.yPosition - 25}px`,
-                        left: `${entity.entityDisplay.xPosition - 25}px`,
-                        userSelect: "none"
-                      }}
-                  >
-                      New Entity
-                  </div>
+              entities.map((entityDetail, idx) =>
+                  <Entity id={idx} onMouseDown={(event) => handleMouseDown(event, entityDetail)} onDoubleClick={(event) => handleDoubleClick(event, entityDetail)} handleEditName={(event) => handleEditName(event, entityDetail)} entityDetail={entityDetail} />
               )
           }
-          {/*<div*/}
-          {/*    contentEditable={isEditable}*/}
-          {/*    onDoubleClick={() => setEditable(!isEditable)}*/}
-          {/*      style={{*/}
-          {/*          borderStyle: "solid",*/}
-          {/*          position: "absolute",*/}
-          {/*          userSelect: "none"*/}
-          {/*      }}>*/}
-          {/*    Delta New*/}
-          {/*</div>*/}
-          <div
-            style={{ borderStyle: "solid", minWidth:"10%", maxWidth:"20%", minHeight: "5%", textAlign:"center"}}
-            onDoubleClick={() => setEditable(true)}
-            onClick={() => setEditable(false)}
-          >
-            <p ref={pref} contentEditable={isEditable} style={{ borderStyle: "solid", border: 'none', outline: 'none' }}/>
-          </div>
       </div>
         <button onClick={() => addEntity()}>Add Entity</button>
     </div>
